@@ -1,0 +1,113 @@
+---
+title: "filtering"
+author: "Seth Campbell"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load data
+
+```{r}
+data = read.csv("F1_dataset.csv")
+```
+
+## Explore categorical vars
+
+```{r}
+# Get value counts for each unique value of the "constructor_name" column
+value_counts <- table(data$constructor_name)
+
+# Plot a bar plot for the counts of unique values
+barplot(value_counts, 
+        main = "Frequency of Constructors",
+        #xlab = "Constructor",
+        ylab = "Frequency (laps)",
+        las = 2,
+        cex.names = 0.5)
+grid(lty = 2, col = "gray")
+
+```
+
+Define function for plotting categorical value counts
+
+```{r}
+# General function for plotting value counts of different categorical predictors
+# Input: 
+#   columnn_data - column from data table
+#   title_attr - remaining text in title after "Frequency of..."
+
+plot_value_counts <- function(column_data, title_attr) {
+  # Calculate value counts
+  value_counts <- table(column_data)
+
+  # Plot a bar plot for the counts of unique values
+  barplot(value_counts, 
+          main = paste("Laps Recorded by", title_attr),
+          #xlab = "Values",
+          #ylab = "Counts",
+          #width = 69,
+          las = 2,
+          cex.names = 0.5)
+
+  # Add grid lines
+  grid(lty = 2, col = "gray")
+  
+}
+```
+
+```{r}
+plot_value_counts(data$constructor_name, 'Constructors')
+plot_value_counts(data$circuit_name, 'Circuits')
+plot_value_counts(data$constructor_nationality, 'Constructor Nationality')
+plot_value_counts(data$driver_nationality, 'Driver Nationality')
+plot_value_counts(data$driver_name, 'Driver Name')
+```
+
+## Filter
+
+Define function for filtering
+
+```{r}
+get_filter_idx <- function(column_data, threshold) {
+  #find predictor values to remove
+  value_counts <- table(column_data)
+  to_remove_logic = value_counts < threshold
+  
+  #count number of values to be removed
+  to_remove = which(to_remove_logic)
+  cat("values to remove:", names(to_remove), "\n")
+  
+  #calculate percent of original data to remove
+  percent_remove = sum(to_remove) / sum(value_counts)
+  cat("Percent of total data: ", percent_remove, "\n")
+  
+  remove_idx = column_data %in% names(to_remove) #get logical array of indexes to remove
+  return(remove_idx)
+}
+  
+```
+
+Filter data
+
+```{r}
+#get index of all rows to remove
+remove_idx = get_filter_idx(data$constructor_name, 2000)
+remove_idx = remove_idx | get_filter_idx(data$circuit_name, 2000) #combine results with logical or ('|')
+remove_idx = remove_idx | get_filter_idx(data$constructor_nationality, 2000)
+remove_idx = remove_idx | get_filter_idx(data$driver_nationality, 2000)
+remove_idx = remove_idx | get_filter_idx(data$driver_name, 2000)
+
+
+data = data[!remove_idx,] #remove from original dataset
+```
+
+Save table as new spreadsheet
+
+```{r}
+
+write.csv(data,file='F1_dataset_filtered2.csv', row.names=FALSE)
+```

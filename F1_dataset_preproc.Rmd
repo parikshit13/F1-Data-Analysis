@@ -1,0 +1,156 @@
+---
+title: "F1 Data Pre-Processing"
+author: "Parikshit Patil & Seth Campbell"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading and Preprocessing Data
+  
+```{r cars}
+#Load each required table into variables
+
+lap_times = read.csv("Formula 1 World Championship (1950 - 2023)/lap_times.csv")
+circuits = read.csv("Formula 1 World Championship (1950 - 2023)/circuits.csv")
+drivers = read.csv("Formula 1 World Championship (1950 - 2023)/drivers.csv")
+constructors = read.csv("Formula 1 World Championship (1950 - 2023)/constructors.csv")
+#lap_number = read.csv("Formula 1 World Championship (1950 - 2023)/lap_times.csv")
+season_year = read.csv("Formula 1 World Championship (1950 - 2023)/races.csv")
+qualifying = read.csv("Formula 1 World Championship (1950 - 2023)/qualifying.csv")
+pit_stop_lap = read.csv("Formula 1 World Championship (1950 - 2023)/pit_stops.csv")
+#pit_stop_duration = read.csv("Formula 1 World Championship (1950 - 2023)/pit_stops.csv")
+#driver_age = read.csv("Formula 1 World Championship (1950 - 2023)/drivers.csv")
+results = read.csv("Formula 1 World Championship (1950 - 2023)/results.csv")
+#circuit_latitude = read.csv("Formula 1 World Championship (1950 - 2023)/circuits.csv")
+#circuit_longitude = read.csv("Formula 1 World Championship (1950 - 2023)/circuits.csv")
+constructor_standings = read.csv("Formula 1 World Championship (1950 - 2023)/constructor_standings.csv")
+#constructor_nationality = read.csv("Formula 1 World Championship (1950 - 2023)/constructor_standings.csv")
+driver_standings = read.csv("Formula 1 World Championship (1950 - 2023)/driver_standings.csv")
+#driver_nationality = read.csv("Formula 1 World Championship (1950 - 2023)/drivers.csv")
+```
+
+```{r}
+#Rename Columns with same names in different tables
+colnames(lap_times)[colnames(lap_times) == "position"] = "position_at_lap"
+colnames(lap_times)[colnames(lap_times) == "lap"] = "lap_number"
+colnames(lap_times)[colnames(lap_times) == "time"] = "lap_time"
+colnames(qualifying)[colnames(qualifying) == "position"] = "qualifying_position"
+colnames(qualifying)[colnames(qualifying) == "number"] = "car_number"
+colnames(drivers)[colnames(drivers) == "number"] = "driver_number"
+colnames(drivers)[colnames(drivers) == "nationality"] = "driver_nationality"
+colnames(constructors)[colnames(constructors) == "nationality"] = "constructor_nationality"
+colnames(constructors)[colnames(constructors) == "name"] = "constructor_name"
+colnames(season_year)[colnames(season_year) == "name"] = "race_name"
+colnames(circuits)[colnames(circuits) == "name"] = "circuit_name"
+#colnames(pit_stop_lap)[colnames(pit_stop_lap) == "lap"] = "xpit_at_lap"
+colnames(pit_stop_lap)[colnames(pit_stop_lap) == "lap"] = "lap_number"
+colnames(pit_stop_lap)[colnames(pit_stop_lap) == "time"] = "pit_at_time"
+colnames(pit_stop_lap)[colnames(pit_stop_lap) == "duration"] = "pit_duration"
+colnames(pit_stop_lap)[colnames(pit_stop_lap) == "stop"] = "pit_stop_num"
+colnames(season_year)[colnames(season_year) == "time"] = "race_time"
+colnames(constructor_standings)[colnames(constructor_standings) == "position"] = "constructor_position"
+colnames(constructor_standings)[colnames(constructor_standings) == "points"] = "constructor_points"
+colnames(constructor_standings)[colnames(constructor_standings) == "wins"] = "constructor_wins"
+colnames(driver_standings)[colnames(driver_standings) == "points"] = "driver_points"
+colnames(driver_standings)[colnames(driver_standings) == "positions"] = "driver_positions"
+colnames(driver_standings)[colnames(driver_standings) == "wins"] = "driver_wins"
+colnames(results)[colnames(results) == "position"] = "result_position"
+
+#pit_stop_lap = pit_stop_lap[,c(1,2)]
+
+#data = merge(lap_times,pit_stop_lap, by = c("driverId","raceId","lap_number"))
+#data = merge(data,qualifying, by = c("driverId","raceId"))
+
+#Prepare the dataset by combining the individual tables, and only retaining necessary columns
+
+data = merge(lap_times,qualifying, by = c("driverId","raceId")) 
+#data = merge(lap_times[,-4],qualifying)
+
+#data = merge(data,drivers, by = c("driverId","number")) # if number = car number in both driver table & qualifying table
+data = merge(data,drivers, by = c("driverId"))
+
+data = merge(data,constructors, by = "constructorId")
+
+#data = merge(data,season_year, by = c("raceId","circuitId"))
+data = merge(data,season_year, by = "raceId")
+
+data = merge(data,circuits, by = "circuitId")
+
+data = merge(data,pit_stop_lap, by = c("driverId","raceId", "lap_number"), all.x = TRUE) #Left Join
+
+data = merge(data,results, by = c("driverId","raceId","constructorId"))
+
+data = merge(data,constructor_standings, by = c("raceId","constructorId"))
+
+data = merge(data,driver_standings, by = c("driverId","raceId"))
+```
+
+```{r}
+columns = c("lap_time","circuit_name","forename","surname","constructor_name","lap_number","year","qualifying_position","pit_duration","dob","grid","lat","lng","constructor_points","constructor_nationality","driver_points","driver_nationality")
+
+data = data[,columns]
+```
+
+
+```{r}
+#library(eeptools)
+library(lubridate)
+
+data$dob = as.Date(data$dob)
+
+#data$dob = age_calc(data$dob,Sys.Date())
+#data$dob = age_calc(data$dob)
+#ym = age_calc(data$dob[1:100])
+
+data$dob <- interval(data$dob, Sys.Date()) %/% years(1)
+```
+
+```{r}
+# Function to convert time string to numeric format in seconds
+convert_time_to_seconds <- function(time_string) {
+  time_components <- strsplit(time_string, "[:.]")[[1]]
+  minutes <- as.numeric(time_components[1])
+  seconds <- as.numeric(time_components[2])
+  milliseconds <- as.numeric(time_components[3])
+  total_time_seconds <- (minutes * 60) + seconds + (milliseconds / 1000)
+  return(total_time_seconds)
+  #return(milliseconds/1000)
+}
+
+# Apply the function to the entire column using sapply or lapply
+data$lap_time = sapply(data$lap_time, convert_time_to_seconds)
+data$pit_duration = sapply(data$pit_duration, convert_time_to_seconds)
+```
+
+```{r}
+library(caTools)
+
+#Merge forename and surname to driver_name
+data$driver_name = paste(data$forename, data$surname, sep = " ")
+
+#remove the columns forename and surname
+remove = c("forename","surname")
+data = data[, !names(data) %in% remove]
+
+#remove andre
+data = data[data$driver_name != "André Lotterer", ]
+```
+
+```{r}
+num_missing_pit <- sum(is.na(data$pit_duration))
+num_missing_pit
+
+num_missing <- sum(is.na(data))
+num_missing
+
+data$pit_duration[is.na(data$pit_duration)] = 0
+```
+
+```{r}
+write.csv(data, file = "F1_dataset.csv", row.names = FALSE)
+```
+

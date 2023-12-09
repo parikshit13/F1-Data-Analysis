@@ -1,0 +1,310 @@
+---
+title: "Statistical modelling-1 Project - Formula 1 Analysis"
+author: "Parikshit Patil & Seth Campbell"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Train-Test Split
+
+```{r}
+data = read.csv("F1_dataset_filtered2.csv")
+#data = read.csv("F1_dataset.csv")
+data$driver_name[data$driver_name == "Sergio PÃ©rez"] <- "Sergio Perez"
+data$driver_name[data$driver_name == "Nico HÃ¼lkenberg"] <- "Nico Hulkenberg"
+data$circuit_name[data$circuit_name == "Circuit de Barcelona-Catalunya"] <- "Circuit de BarcelonaCatalunya"
+data$circuit_name[data$circuit_name == "Circuit de Spa-Francorchamps"] <- "Circuit de SpaFrancorchamps"
+data$circuit_name[data$circuit_name == "AutÃ³dromo Hermanos RodrÃ­gue"] <- "Autódromo Hermanos Rodríguez"
+data$circuit_name[data$circuit_name == "AutÃ³dromo JosÃ© Carlos Pace"] <- "Autódromo José Carlos Pace"
+
+
+#Remove spaces from a specific column
+data$circuit_name <- gsub("\\s+", "", data$circuit_name)
+data$constructor_name <- gsub("\\s+", "", data$constructor_name)
+data$constructor_nationality <- gsub("\\s+", "", data$constructor_nationality)
+data$driver_nationality <- gsub("\\s+", "", data$driver_nationality)
+data$driver_name <- gsub("\\s+", "", data$driver_name)
+
+library(caTools)
+
+set.seed(1)  #seed for reproducibility
+split <- sample.split(data$lap_time, SplitRatio = 0.7)
+
+#Create training and testing datasets based on the split
+training_data <- data[split, ]
+testing_data <- data[!split, ]
+```
+
+## Encoding
+
+```{r}
+#Perform one-hot encoding on categorical columns in training data
+enc_circuit_name_tr <- model.matrix(~ circuit_name - 1, data = training_data)
+enc_driver_name_tr <- model.matrix(~ driver_name - 1, data = training_data)
+enc_constructor_name_tr <- model.matrix(~ constructor_name - 1, data = training_data)
+enc_constructor_nation_tr <- model.matrix(~ constructor_nationality - 1, data = training_data)
+enc_driver_nation_tr <- model.matrix(~ driver_nationality - 1, data = training_data)
+
+
+# Apply the same encoding to the testing data
+enc_circuit_name_ts <- model.matrix(~ circuit_name - 1, data = testing_data)
+enc_driver_name_ts <- model.matrix(~ driver_name - 1, data = testing_data)
+#enc_surname_ts <- model.matrix(~ surname - 1, data = testing_data)
+enc_constructor_name_ts <- model.matrix(~ constructor_name - 1, data = testing_data)
+enc_constructor_nation_ts <- model.matrix(~ constructor_nationality - 1, data = testing_data)
+enc_driver_nation_ts <- model.matrix(~ driver_nationality - 1, data = testing_data)
+```
+
+```{r}
+#add the (training) encoded columns to the training dataset
+training_data_encoded <- cbind(training_data, enc_circuit_name_tr, enc_constructor_name_tr, enc_constructor_nation_tr, enc_driver_nation_tr, enc_driver_name_tr)
+
+
+#add the (testing) encoded columns to the testing dataset
+testing_data_encoded <- cbind(testing_data, enc_circuit_name_ts, enc_constructor_name_ts, enc_constructor_nation_ts, enc_driver_nation_ts, enc_driver_name_ts)
+```
+
+```{r}
+#Remove the non-encoded columns from the train dataset
+training_data_encoded <- training_data_encoded[, !colnames(training_data_encoded) %in% c("circuit_name", "driver_name", "constructor_name", "constructor_nationality", "driver_nationality")]
+
+
+#Remove the non-encoded columns from the test dataset
+testing_data_encoded <- testing_data_encoded[, !colnames(testing_data_encoded) %in% c("circuit_name", "driver_name", "constructor_name", "constructor_nationality", "driver_nationality")]
+```
+
+## Testing LINE Assumptions
+
+```{r}
+#residual plot for linearity and EV [Full Model]
+lm_cars = lm(lap_time~.,data = training_data_encoded)
+
+plot(fitted(lm_cars), resid(lm_cars), col = "grey", pch = 20,
+     xlab = "Fitted", ylab = "Residuals", main = "Residual plot")
+abline(h = 0, col = "darkorange", lwd = 2)
+```
+
+```{r}
+#qq plot for normality
+qqnorm(fitted(lm_cars))  
+qqline(fitted(lm_cars), col = "dodgerblue", lwd = 2)
+```
+
+```{r}
+#bp-test and shapiro test
+library(lmtest)
+bptest(lm_cars)
+
+#shapiro.test(resid(lm_cars))
+```
+Shapiro Test commented as - Error in shapiro.test(resid(lm_cars)) :sample size must be between 3 and 5000
+
+## Box Cox Transformation
+
+```{r}
+library(MASS)
+
+boxcox(lm_cars)
+```
+
+```{r}
+boxcox(lm_cars, lambda = seq(-4, -1, by = 0.05))
+```
+
+Best lambda = -2
+
+```{r}
+lambda = -2
+lm_cars_trans = lm(((lap_time^(lambda)-1)/(lambda))~.,data = training_data_encoded)
+```
+
+## Test LINE Assuptions (box-cox transformed model)
+
+```{r}
+#residual plot for linearity and EV
+plot(fitted(lm_cars_trans), resid(lm_cars_trans), col = "grey", pch = 20,
+     xlab = "Fitted", ylab = "Residuals", main = "Residual plot")
+
+abline(h = 0, col = "darkorange", lwd = 2)
+```
+
+```{r}
+#qq plot for normality
+qqnorm(fitted(lm_cars_trans))  
+qqline(fitted(lm_cars_trans), col = "dodgerblue", lwd = 2)
+```
+
+```{r}
+#bp-test and shapiro test
+bptest(lm_cars_trans)
+
+#shapiro.test(resid(lm_cars_trans))
+```
+Shapiro Test commented as - Error in shapiro.test(resid(lm_cars)) :sample size must be between 3 and 5000
+
+## Collinearity Test
+
+```{r}
+library(faraway)
+
+#vif(lm_cars)
+#vif(lm_cars_trans)
+```
+vif() commented as - Error in vif.lm(lm_cars) : Model has non-identifable parameters
+
+```{r}
+lm_cars_non_encoded = lm(lap_time~.,data = training_data)
+
+#vif(lm_cars_non_encoded)
+```
+vif() commented as - Error in vif.lm(lm_cars_non_encoded) :
+Model has non-identifable parameters
+
+## Model Definitions
+
+```{r}
+#Null Model
+#lm_cars_null = lm(lap_time~1,data = training_data_encoded)
+
+#Full Model
+lm_cars = lm(lap_time~.,data = training_data_encoded)
+
+#Full Model(Box-Cox Transformed)
+lm_cars_trans = lm(((lap_time^(lambda)-1)/(lambda))~.,data = training_data_encoded)
+
+#Manually Selected Reduced Model based on current drivers, teams, and, circuits
+lm_cars_reduced = lm(lap_time~
+                       driver_nameMaxVerstappen + driver_nameSergioPérez + driver_nameLewisHamilton + driver_nameFernandoAlonso + driver_nameCharlesLeclerc + driver_nameLandoNorris + driver_nameCarlosSainz + driver_nameGeorgeRussell + driver_nameLanceStroll + driver_namePierreGasly + driver_nameEstebanOcon + driver_nameAlexanderAlbon + driver_nameYukiTsunoda + driver_nameValtteriBottas +  driver_nameNicoHülkenberg + driver_nameDanielRicciardo + driver_nameKevinMagnussen + constructor_nameRedBull + constructor_nameMercedes + constructor_nameFerrari + constructor_nameMcLaren + constructor_nameAstonMartin + constructor_nameAlpineF1Team + constructor_nameWilliams + constructor_nameAlphaTauri + constructor_nameAlfaRomeo + constructor_nameHaasF1Team + circuit_nameBahrainInternationalCircuit + circuit_nameJeddahCornicheCircuit + circuit_nameAlbertParkGrandPrixCircuit + circuit_nameSuzukaCircuit + circuit_nameShanghaiInternationalCircuit + circuit_nameMiamiInternationalAutodrome + circuit_nameAutodromoEnzoeDinoFerrari + circuit_nameCircuitdeMonaco + circuit_nameCircuitGillesVilleneuve + circuit_nameCircuitdeBarcelonaCatalunya + circuit_nameRedBullRing + circuit_nameSilverstoneCircuit + circuit_nameHungaroring + circuit_nameCircuitdeSpaFrancorchamps + circuit_nameCircuitParkZandvoort + circuit_nameAutodromoNazionalediMonza + circuit_nameBakuCityCircuit + circuit_nameMarinaBayStreetCircuit + circuit_nameCircuitoftheAmericas + circuit_nameAutódromoHermanosRodríguez + circuit_nameAutódromoJoséCarlosPace + circuit_nameYasMarinaCircuit
+                     ,data = training_data_encoded)
+```
+
+## Forward Feature Selection (AIC)
+Prior to re-running the whole code, the Forward Selection Model code is commented as it takes close to 3 hours to run each time.
+```{r}
+#Perform Forward Selection starting from the reduced model
+#lm_cars_reduced_forw_aic = step(lm_cars_reduced, scope = list(upper=lm_cars,lower=NULL),direction="forward",trace = 0)
+
+# Resulting model
+#lm_cars_reduced_forw_aic
+
+#Summary
+#summary(lm_cars_reduced_forw_aic)
+```
+
+## MSE/RMSE Model Evaluation
+
+```{r}
+#predict on the test dataset [Full Model]
+predictions = predict(lm_cars, newdata = testing_data_encoded)
+#calculate mse and rmse [Full Model]
+mse = mean((testing_data_encoded$lap_time - predictions)^2)
+print(paste("Full Model MSE =",mse))
+print(paste("Full Model RMSE =",sqrt(mse)))
+
+
+
+#predict on the test dataset [Full Model (Box-Cox Transformed)]
+predictions = predict(lm_cars_trans, newdata = testing_data_encoded)
+#transform predictions back to original format
+predictions = ((predictions*lambda)+1)^(1/lambda)
+resid_sq = (testing_data_encoded$lap_time - predictions)^2
+#remove any nan values
+resid_sq = resid_sq[!is.nan(resid_sq)]
+#calculate mse and rmse [Full Model (Box-Cox Transformed)]
+mse = mean(resid_sq)
+print(paste("Full Model (Box-Cox Transformed) MSE =",mse))
+print(paste("Full Model (Box-Cox Transformed) RMSE =",sqrt(mse)))
+
+
+
+#predict on the test dataset [Reduced Model]
+predictions = predict(lm_cars_reduced, newdata = testing_data_encoded)
+#calculate mse and rmse [Reduced Model]
+mse = mean((testing_data_encoded$lap_time - predictions)^2)
+print(paste("Reduced Model MSE =",mse))
+print(paste("Reduced Model RMSE =",sqrt(mse)))
+
+
+
+#predict on the test dataset [Foward Selection Model]
+#predictions = predict(lm_cars_reduced_forw_aic, newdata = testing_data_encoded)
+#calculate mse and rmse [Foward Selection Model]
+#mse = mean((testing_data_encoded$lap_time - predictions)^2)
+#print(paste("Forward Selection Model MSE =",mse))
+#print(paste("Forward Selection Model RMSE =",sqrt(mse)))
+```
+Note: Forward Selection AIC MSE = 147.0267, RMSE = 12.1254
+
+Based on MSE and RMSE - the best model is the Box-Cox transformed model
+
+## Box-Cox Model - Summary
+
+```{r}
+summary(lm_cars_trans)
+```
+
+## Box-Cox Model - P Values
+
+```{r}
+sort(summary(lm_cars_trans)$coefficients[, "Pr(>|t|)"])
+```
+
+
+## PRESS (LOOCV) 
+
+```{r}
+n = nrow(training_data_encoded)
+
+#[Full Model]
+print(paste("Full Model PRESS =",
+  sqrt(sum((resid(lm_cars)/(1-hatvalues(lm_cars)))^2)/n)))
+
+
+
+#[Full Model (Box-Cox Transformed)]
+predictions = predict(lm_cars_trans, newdata = testing_data_encoded)
+predictions = ((predictions*lambda)+1)^(1/lambda)
+resid = (testing_data_encoded$lap_time - predictions)
+resid = resid[!is.nan(resid)]
+hatval = hatvalues(lm_cars_trans)
+press = sqrt(sum((resid/(1-hatval))^2)/n)
+print(paste("Full Model (Box-Cox Transformed) PRESS =", press))
+
+
+
+#[Reduced Model]
+print(paste("Reduced Model PRESS =",
+            sqrt(sum((resid(lm_cars_reduced)/(1-hatvalues(lm_cars_reduced)))^2)/n)))
+
+
+
+#[Forward Selection Model]
+#print(paste("Forward Selection Model PRESS =",
+            #sqrt(sum((resid(lm_cars_reduced_forw_aic)/(1-hatvalues(lm_cars_reduced_forw_aic)))^2)/n)))
+```
+Note: Forward Selection Model PRESS = 67.3010
+
+## Random Forrest
+
+```{r}
+library(randomForest)
+
+set.seed(1)
+cars_forest = randomForest(lap_time ~ ., data = training_data[1:1000,], importance = TRUE)
+```
+
+## Random Forest MSE/RMSE Evaluation
+
+```{r}
+#predict on the test dataset [Foward Selection Model]
+predictions = predict(cars_forest, newdata = testing_data)
+
+#calculate mse and rmse [Foward Selection Model]
+mse = mean((testing_data$lap_time - predictions)^2)
+print(paste("Random Forest Model MSE =",mse))
+print(paste("Random Forest Model RMSE =",sqrt(mse)))
+```
